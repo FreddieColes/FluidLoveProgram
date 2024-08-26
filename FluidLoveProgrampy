@@ -1,0 +1,177 @@
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+from PIL import Image, ImageTk
+import os
+import sys
+import ctypes
+
+# Import the poster creation function from the existing script
+from poster_script import create_poster, remove_background, select_file, create_output_folder
+
+class PosterCreatorApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+
+        self.title("Poster Creator")
+        self.geometry("1200x800")
+
+        # Create notebook (tabbed interface)
+        self.notebook = ttk.Notebook(self)
+        self.notebook.pack(expand=True, fill="both")
+
+        # Create tabs
+        self.home_tab = ttk.Frame(self.notebook)
+        self.background_tab = ttk.Frame(self.notebook)
+        self.audio_tab = ttk.Frame(self.notebook)
+        self.settings_tab = ttk.Frame(self.notebook)
+
+        self.notebook.add(self.home_tab, text="Home")
+        self.notebook.add(self.background_tab, text="Background")
+        self.notebook.add(self.audio_tab, text="Audio")
+        self.notebook.add(self.settings_tab, text="Settings")
+
+        self.setup_home_tab()
+        self.setup_background_tab()
+        self.setup_audio_tab()
+        self.setup_settings_tab()
+
+        # Bind the close button to exit_program method
+        self.protocol("WM_DELETE_WINDOW", self.exit_program)
+
+    def setup_home_tab(self):
+        label = tk.Label(self.home_tab, text="Hey Freddie, looking sexy!", font=("Arial", 24))
+        label.pack(pady=20)
+
+    def setup_background_tab(self):
+        self.background_tab.columnconfigure(1, weight=1)
+        self.background_tab.rowconfigure(0, weight=1)
+
+        button_frame = ttk.Frame(self.background_tab)
+        button_frame.grid(row=0, column=0, padx=20, pady=20, sticky="ns")
+
+        create_button = ttk.Button(button_frame, text="Create Poster", command=self.create_and_display_poster)
+        create_button.pack(pady=10)
+
+        select_button = ttk.Button(button_frame, text="Select Image", command=self.select_and_display_image)
+        select_button.pack(pady=10)
+
+        set_background_button = ttk.Button(button_frame, text="Set as Desktop Background", command=self.set_as_desktop_background)
+        set_background_button.pack(pady=10)
+
+        self.image_frame = ttk.Frame(self.background_tab)
+        self.image_frame.grid(row=0, column=1, padx=20, pady=20, sticky="nsew")
+
+        self.image_label = tk.Label(self.image_frame)
+        self.image_label.pack(expand=True, fill="both")
+
+        self.background_tab.bind("<Configure>", self.resize_image)
+
+    def setup_audio_tab(self):
+        label = tk.Label(self.audio_tab, text="Audio features coming soon!", font=("Arial", 16))
+        label.pack(pady=20)
+
+    def setup_settings_tab(self):
+        label = tk.Label(self.settings_tab, text="Settings options coming soon!", font=("Arial", 16))
+        label.pack(pady=20)
+
+    def create_and_display_poster(self):
+        input_path = select_file()
+        if not input_path:
+            return
+
+        output_folder = create_output_folder()
+        input_filename = os.path.basename(input_path)
+        name, ext = os.path.splitext(input_filename)
+        output_filename = f"{name} Poster.png"
+        output_path = os.path.join(output_folder, output_filename)
+
+        try:
+            image_no_bg = remove_background(input_path)
+            poster = create_poster(image_no_bg, 1000, 1500)
+            poster.save(output_path)
+            self.display_image(output_path)
+        except Exception as e:
+            tk.messagebox.showerror("Error", f"An error occurred: {str(e)}")
+
+    def select_and_display_image(self):
+        file_path = filedialog.askopenfilename(filetypes=[("Image files", "*.png *.jpg *.jpeg *.gif *.bmp")])
+        if file_path:
+            self.display_image(file_path)
+
+    def display_image(self, image_path):
+        self.current_image_path = image_path
+        self.current_image = Image.open(image_path)
+        self.resize_image()
+
+    def resize_image(self, event=None):
+        if hasattr(self, 'current_image'):
+            # Get the size of the image frame
+            frame_width = self.image_frame.winfo_width()
+            frame_height = self.image_frame.winfo_height()
+
+            # Resize the image to fit the frame while maintaining aspect ratio
+            image_copy = self.current_image.copy()
+            image_copy.thumbnail((frame_width, frame_height))
+
+            # Create a new PhotoImage object
+            photo = ImageTk.PhotoImage(image_copy)
+
+            # Update the image in the label
+            self.image_label.config(image=photo)
+            self.image_label.image = photo  # Keep a reference
+
+    def set_as_desktop_background(self):
+        if not hasattr(self, 'current_image_path'):
+            messagebox.showerror("Error", "Please select or create an image first.")
+            return
+
+        try:
+            # Get the screen resolution
+            user32 = ctypes.windll.user32
+            screen_width = user32.GetSystemMetrics(0)
+            screen_height = user32.GetSystemMetrics(1)
+
+            # Open the image
+            img = Image.open(self.current_image_path)
+
+            # Calculate aspect ratios
+            img_aspect = img.width / img.height
+            screen_aspect = screen_width / screen_height
+
+            if screen_aspect > img_aspect:
+                # Screen is wider, fit to height
+                new_height = screen_height
+                new_width = int(new_height * img_aspect)
+            else:
+                # Screen is taller, fit to width
+                new_width = screen_width
+                new_height = int(new_width / img_aspect)
+
+            # Resize the image
+            img = img.resize((new_width, new_height), Image.LANCZOS)
+
+            # Create a new image with screen size and paste the resized image centered
+            background = Image.new('RGB', (screen_width, screen_height), (0, 0, 0))
+            offset = ((screen_width - new_width) // 2, (screen_height - new_height) // 2)
+            background.paste(img, offset)
+
+            # Save the final image
+            temp_path = os.path.join(os.path.dirname(self.current_image_path), "temp_wallpaper.png")
+            background.save(temp_path)
+
+            # Set the wallpaper
+            ctypes.windll.user32.SystemParametersInfoW(20, 0, temp_path, 0)
+
+            messagebox.showinfo("Success", "Desktop background has been set successfully!")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to set desktop background: {str(e)}")
+
+    def exit_program(self):
+        if messagebox.askokcancel("Quit", "Do you want to quit?"):
+            self.quit()
+            self.destroy()
+            sys.exit()
+
+if __name__ == "__main__":
+    app = PosterCreatorApp()
+    app.mainloop()
